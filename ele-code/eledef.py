@@ -1,4 +1,5 @@
 import requests
+import sqlite3
 import json
 import time
 
@@ -99,8 +100,113 @@ def ele_auto(account):  # 这个函数每隔半小时就会调用一次ele_warni
         time.sleep(1800)
 
 
-#def save_user_num: #这段函数是用来保存需要使用ele_auto函数用户的学号的，将会保存在savenum.py文件中
+#这段函数是用来保存需要使用ele_auto函数用户的学号的，将会保存在account_database.py文件中
+def save_user_num():
+    # 连接到 SQLite 数据库（如果数据库不存在，会自动创建）
+    conn = sqlite3.connect('account_database.db')
+    cursor = conn.cursor()
 
+    # 创建表（如果表不存在）
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_number TEXT UNIQUE NOT NULL,
+            wechat_group TEXT NOT NULL
+        )
+    ''')
+    conn.commit()
+
+    print("开始输入学号和对应群组（输入'q'退出）")
+    
+    while True:
+        # 输入学号
+        account = input("\n请输入学号：").strip()
+        if account.lower() == 'q':
+            break
+        
+        if not account:
+            print("学号不能为空，请重新输入")
+            continue
+
+        # 输入群组名称
+        wechat_group = input("请输入对应的微信群组名称：").strip()
+        if wechat_group.lower() == 'q':
+            break
+        
+        if not wechat_group:
+            print("群组名称不能为空，请重新输入")
+            continue
+        
+        # 保存学号和群组对应关系
+        try:
+            cursor.execute('INSERT INTO accounts (student_number, wechat_group) VALUES (?, ?)', (account, wechat_group))
+            conn.commit()
+            print(f"已添加：学号 {account} -> 提醒微信群： {wechat_group}")
+        except sqlite3.IntegrityError:
+            print(f"学号 {account} 已存在，请使用其他学号")
+
+    # 查询所有记录
+    cursor.execute('SELECT student_number, wechat_group FROM accounts')
+    all_accounts = cursor.fetchall()
+
+    # 将结果转换为字典
+    existing_accounts = {student_number: wechat_group for student_number, wechat_group in all_accounts}
+
+    # 关闭数据库连接
+    conn.close()
+
+    return {
+        "status_code": 200,
+        "message": "学号和对应微信群组保存成功",
+        "accounts": existing_accounts
+    }
+
+
+
+   
+import os
+import sqlite3
+
+def load_user_num():
+    """从 SQLite 数据库中拉取所有学号和微信群组数据"""
+    try:
+        # 首先检查数据库文件是否存在
+        if not os.path.exists('account_database.db'):
+            return {
+                "status_code": 500,
+                "error_message": "数据库文件 'account_database.db' 不存在"
+            }
+
+        # 连接到数据库
+        conn = sqlite3.connect('account_database.db')
+        cursor = conn.cursor()
+
+        # 查询所有记录
+        cursor.execute('SELECT student_number, wechat_group FROM accounts')
+        all_accounts = cursor.fetchall()
+
+        # 使用相同的字典推导式格式
+        existing_accounts = {student_number: wechat_group for student_number, wechat_group in all_accounts}
+
+        # 关闭数据库连接
+        conn.close()
+
+        return {
+            "status_code": 200,
+            "message": "学号和对应微信群组读取成功",
+            "accounts": existing_accounts
+        }
+
+    except sqlite3.Error as e:
+        return {
+            "status_code": 500,
+            "error_message": f"数据库操作失败: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "status_code": 500,
+            "error_message": f"未知错误: {str(e)}"
+        }
 
 
 #def warning_group: #这段函数是将低电量警告信息发送到指定群组的
