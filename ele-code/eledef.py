@@ -2,6 +2,8 @@ import requests
 import sqlite3
 import json
 import time
+import os
+
 
 
 def ele_usage(account):
@@ -162,10 +164,6 @@ def save_user_num():
     }
 
 
-
-   
-import os
-import sqlite3
 
 def load_user_num():
     """从 SQLite 数据库中拉取所有学号和微信群组数据"""
