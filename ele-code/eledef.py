@@ -156,7 +156,7 @@ def save_user_num(account, groupid):
         # 连接到 SQLite 数据库（如果不存在则会创建一个新的）
         db_path = '/root/chatgpt-on-wechat/plugins/findele/accounts.db'
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        conn = sqlite3.connect('accounts.db')
+        conn = sqlite3.connect('db_path')
         cursor = conn.cursor()
 
         # 创建表（如果不存在）
@@ -193,7 +193,7 @@ def load_user_num():
     try:
         # 连接到 SQLite 数据库
         db_path = '/root/chatgpt-on-wechat/plugins/findele/accounts.db'
-        conn = sqlite3.connect('accounts.db')
+        conn = sqlite3.connect('db_path')
         cursor = conn.cursor()
 
         # 查询所有记录
@@ -221,7 +221,7 @@ def load_user_num():
 def remove_account_monitoring(account):
     try:
         # 连接到 SQLite 数据库
-        conn = sqlite3.connect('accounts.db')
+        conn = sqlite3.connect('db_path')
         cursor = conn.cursor()
 
         # 检查记录是否存在
