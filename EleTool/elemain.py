@@ -10,12 +10,12 @@ from channel.chat_message import ChatMessage
 from common.log import logger
 from plugins import *
 from config import conf, plugin_config
-from .eledef import ele_usage, ele_auto, save_user_num, load_user_num,remove_account_monitoring
+from .eledef import ele_usage, ele_auto, save_user_num, load_user_num,remove_account_monitoring,send_to_group
 
 @plugins.register(
     name="electricity_plugin",
-    desc="A plugin for monitoring electricity usage",
-    version="0.1.0",
+    desc="为使用完美校园的高校提供查电费和监控电费的功能",
+    version="1.0",
     author="bingjuu",
     desire_priority=0
 )
@@ -24,7 +24,6 @@ class ElectricityPlugin(Plugin):
         super().__init__()
         self.handlers = {}
         self.handlers[Event.ON_HANDLE_CONTEXT] = self.on_handle_context
-        self.account_extractor = AccountExtractor()
         self.pending_registrations = {}  # 存储待处理的注册信息
         # 从全局配置获取插件配置
         self.config = self.load_config()
@@ -45,36 +44,11 @@ class ElectricityPlugin(Plugin):
         """检查是否包含取消电费监控关键词"""
         return '取消' in message and '电费' in message and '监控' in message
 
-    def send_to_group(self, groupid, reply_text):
-        try:
-            # 创建上下文对象
-            context = EventContext() 
-            context.type = ContextType.TEXT
-            context.kwargs = {
-                "isgroup": True,
-                "msg": ChatMessage(
-                    groupid=groupid
-                )
-            }
-            
-            # 创建事件上下文
-            e_context = EventContext()
-            e_context["context"] = context
-            
-            # 创建回复对象
-            reply = Reply(ReplyType.TEXT, reply_text)
-            e_context["reply"] = reply
-            
-            # 发送消息
-            self.bot.send(e_context, reply)
-            logger.info(f"[电费插件] 成功发送消息到群组 {groupid}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"[电费插件] 发送消息到群组 {groupid} 失败: {str(e)}")
-            return False
-
-
+    def extract_account(self, text):
+        """从消息中提取学号"""
+        match = re.search(r'\d{8,20}', text)
+        return match.group() if match else None
+    
     def get_help_text(self, **kwargs):
         help_text = "电费查询与监控插件"
         help_text += "使用说明："
@@ -100,13 +74,15 @@ class ElectricityPlugin(Plugin):
 
                                 # 如果有警告信息，则发送到对应的群组
                                 if warning and warning.get("status_code") == 200 and warning.get("warning"):
-                                    reply = Reply()
-                                    reply.type = ReplyType.TEXT
-                                    reply.content = warning["warning"]
-
                                     try:
-                                        self.send_to_group(groupid, reply)
-                                        logger.info(f"[电费插件] 已发送警告消息到群组 {groupid}")
+                                        message = warning["warning"]
+                                        success = send_to_group(groupid, message, "text")
+
+                                    
+                                        if success:
+                                            logger.info(f"[电费插件] 已发送警告消息到群组 {groupid}")
+                                        else:
+                                            logger.error(f"[电费插件] 发送警告消息到群组 {groupid} 失败")
                                     except Exception as e:
                                         logger.error(f"[电费插件] 发送警告消息到群组 {groupid} 失败：{e}")
 
@@ -146,7 +122,7 @@ class ElectricityPlugin(Plugin):
 
             # 处理电费查询
             if self.check_query_keywords(content):
-                        account = self.account_extractor.extract_account(content)
+                        account = self.extract_account(content)
                         if not account:
                             reply_content = "未检测到学号，请发送的消息内容包含'电费'和'查'关键字，并附上学号"
                         else:
@@ -173,28 +149,28 @@ class ElectricityPlugin(Plugin):
 
             # 处理电费监控
             if self.check_monitor_keywords(content):
-                        account = self.account_extractor.extract_account(content)
+                        account = self.extract_account(content)
                         if not account:
                             reply_content = "未检测到学号，请发送的消息内容包含'电费'和'监控'关键字，并附上学号"
                         else:
                             session_id = e_context['context'].get('session_id')
                             self.pending_registrations[session_id] = account
-                            reply_content = "请回复您想要绑定的微信群，该学号的电费提醒将发送到指定微信群"
+                            reply_content = "请告诉我要绑定的微信群名，电费警告将会发送到该微信群（直接回复微信群名即可）"
                         
                         self._send_reply(e_context, reply_content)
 
             # 处理取消监控
             elif self.check_cancel_keywords(content):
-                account = self.account_extractor.extract_account(content)
+                account = self.extract_account(content)
                 if not account:
-                    reply_content = "请提供有效的学号"
+                    reply_content = "你似乎没有告诉我要取消监控的学号"
                 else:
                     result = remove_account_monitoring(account)
                     reply_content = result["message"]
                     if result["status_code"] == 200:
                         logger.info(f"[电费插件] 已取消学号 {account} 的监控")
                     elif result["status_code"] == 404:
-                        logger.warning(f"[电费插件] 学号 {account} 的监控记录未找到")
+                        logger.warning(f"[电费插件] 学号 {account} 似乎没有在监控列表中")
             
                 self._send_reply(e_context, reply_content)  
 
@@ -221,18 +197,15 @@ class ElectricityPlugin(Plugin):
         groupid = e_context['context'].get('content').strip()
 
         if not groupid:
-            reply_content = "微信群名不能为空，请重新输入"
+            reply_content = "微信群名不能为空，请重新输入"#写完发现没想到有什么好方法触发，懒得删除了
         else:
             response = save_user_num(account, groupid)
             del self.pending_registrations[session_id]
             reply_content = response["message"]
             if response["status_code"] == 200:
-                logger.info(f"[电费插件] 学号 {account} 已成功绑定到微信群 {groupid}")
+                logger.info(f"[电费插件] 学号 {account} 将会将电量警告信息发送到微信群 {groupid},开始监控")
         
         self._send_reply(e_context, reply_content)
 
-class AccountExtractor:
-    def extract_account(self, text):
-        """从消息中提取学号"""
-        match = re.search(r'\d{8,20}', text)
-        return match.group() if match else None
+
+

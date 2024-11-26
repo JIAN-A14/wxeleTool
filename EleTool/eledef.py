@@ -3,6 +3,12 @@ import sqlite3
 import json
 import os
 from pathlib import Path
+from bridge.reply import Reply, ReplyType
+from channel.wechat.wechat_channel import WechatChannel
+from common.log import logger
+from lib import itchat
+import io
+import requests
 
 
 
@@ -122,7 +128,7 @@ def ele_warning(account):#这段函数会调用ele_usage函数，如果电量过
         if current_power is not None and isinstance(current_power,(int,float)) and current_power < 20:
             return {
                 "status_code": 200,
-                "warning": f"当前电量为: {current_power} 度，电量过低，请注意"
+                "warning": f"当前电量为: {current_power} 度，电量过低，尽快充电费捏"
             }
         else:
             return{
@@ -139,7 +145,7 @@ def ele_warning(account):#这段函数会调用ele_usage函数，如果电量过
 
 
 
-def ele_auto(account):# 这个函数会调用ele_warning函数检查一次电量，如果电量过低就会返回警告
+def ele_auto(account):# 这个函数会调用ele_warning函数检查一次电量，这个中间商函数是前期构思拉出来的，最后集成在elemain里了
     """检查电量并返回警告信息"""
     warning_info = ele_warning(account)
     if warning_info and warning_info["status_code"] == 200 and "warning" in warning_info:
@@ -151,7 +157,7 @@ def ele_auto(account):# 这个函数会调用ele_warning函数检查一次电量
 
 
 
-def save_user_num(account, groupid):
+def save_user_num(account, groupid):#可以自行修改数据库保存的地址，修改db_path的内容即可
     try:
         # 连接到 SQLite 数据库（如果不存在则会创建一个新的）
         db_path = '/root/chatgpt-on-wechat/plugins/findele/accounts.db'
@@ -245,3 +251,92 @@ def remove_account_monitoring(account):
 
     except Exception as e:
         return {"status_code": 500, "message": f"未知错误: {str(e)}"}
+
+
+def send_to_group(group_name: str, message, msg_type: str = 'text'):
+    """
+    发送消息到指定群组
+    :param group_name: 群组名称
+    :param message: 要发送的消息内容
+    :param msg_type: 消息类型，支持 'text', 'image', 'file', 'voice', 'video'
+    :return: bool 发送成功返回False
+    """
+    try:
+        # 获取WechatChannel实例
+        wx_channel = WechatChannel()
+        
+        # 查找群组
+        group = itchat.search_chatrooms(name=group_name)
+        if not group:
+            logger.error(f"[WX] Group '{group_name}' not found")
+            return False
+            
+        group_id = group[0]['UserName']
+        
+        # 构造Reply对象
+        reply = Reply()
+        
+        # 根据消息类型设置Reply
+        if msg_type.lower() == 'text':
+            reply.type = ReplyType.TEXT
+            reply.content = message
+            
+        elif msg_type.lower() == 'image':
+            if isinstance(message, str):  # 如果是URL
+                if message.startswith(('http://', 'https://')):
+                    reply.type = ReplyType.IMAGE_URL
+                    reply.content = message
+                else:  # 如果是本地文件路径
+                    reply.type = ReplyType.IMAGE
+                    with open(message, 'rb') as f:
+                        reply.content = io.BytesIO(f.read())
+            else:  # 如果是二进制数据
+                reply.type = ReplyType.IMAGE
+                reply.content = io.BytesIO(message)
+                
+        elif msg_type.lower() == 'file':
+            reply.type = ReplyType.FILE
+            reply.content = message
+            
+        elif msg_type.lower() == 'voice':
+            reply.type = ReplyType.VOICE
+            reply.content = message
+            
+        elif msg_type.lower() == 'video':
+            if isinstance(message, str) and message.startswith(('http://', 'https://')):
+                reply.type = ReplyType.VIDEO_URL
+                reply.content = message
+            else:
+                reply.type = ReplyType.VIDEO
+                reply.content = message
+        else:
+            logger.error(f"[WX] Unsupported message type: {msg_type}")
+            return False
+            
+        # 构造Context
+        context = {
+            "receiver": group_id,
+            "isgroup": True
+        }
+        
+        # 发送消息
+        wx_channel.send(reply, context)
+        logger.info(f"[WX] Message sent to group {group_name} successfully")
+        return True
+        
+    except Exception as e:
+        logger.error(f"[WX] Error sending message to group {group_name}: {str(e)}")
+        return False
+# 使用例
+"""
+# 发送文本
+send_to_group("让我测测", "Hello World", "text")
+# 发送图片URL
+send_to_group("让我测测", "https://img.smnet1.com/files.php?filename=1732586034-22163899.png", "image")
+# 发送本地图片
+send_to_group("让我测测", "我去我喜欢铃兰.jpg", "image")
+# 发送文件
+send_to_group("让我测测", "114514.zip", "file")
+# 发送视频
+send_to_group("让我测测", "野兽先辈.mp4", "video")
+"""
