@@ -96,8 +96,8 @@ class ElectricityPlugin(Plugin):
                 except Exception as e:
                     logger.error(f"[电费插件] 监控任务出错：{str(e)}")
                 finally:
-                    # 从配置中获取检查间隔，默认为10秒
-                    check_interval = self.config.get("check_interval", 10)
+                    # 从配置中获取检查间隔，默认为3600秒即一分钟
+                    check_interval = self.config.get("check_interval", 3600)
                     time.sleep(check_interval)
 
         # 启动监控线程
