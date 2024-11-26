@@ -134,7 +134,7 @@ def ele_warning(account):#这段函数会调用ele_usage函数，如果电量过
             return{
                 "status_code": 200,
                 "warning": f"当前电量为: {current_power} 度，电量正常"
-            }#这段else仅用于测试，实际使用时应该删除
+            }#这段else不需要可以删除
     else:
         return{
             "status_code": usage_info["status_code"],
