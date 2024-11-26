@@ -145,7 +145,7 @@ def ele_warning(account):#这段函数会调用ele_usage函数，如果电量过
 
 
 
-def ele_auto(account):# 这个函数会调用ele_warning函数检查一次电量，这个中间商函数是前期构思拉出来的，最后集成在elemain里了
+def ele_auto(account):# 这个函数会调用ele_warning函数检查一次电量，这个中间商函数是前期构思拉出来的，最后为这个函数设想的功能集成在elemain里了，为了让它有点作用就把他放着了
     """检查电量并返回警告信息"""
     warning_info = ele_warning(account)
     if warning_info and warning_info["status_code"] == 200 and "warning" in warning_info:
@@ -157,35 +157,31 @@ def ele_auto(account):# 这个函数会调用ele_warning函数检查一次电量
 
 
 
-def save_user_num(account, groupid):#可以自行修改数据库保存的地址，修改db_path的内容即可
+def save_user_num(account, groupid):#可以自行修改数据库保存的地址
+    # 连接到 SQLite 数据库（如果不存在则会创建一个新的）
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(script_dir, 'accounts.db')
+
     try:
-        # 连接到 SQLite 数据库（如果不存在则会创建一个新的）
-        db_path = '/root/chatgpt-on-wechat/plugins/findele/accounts.db'
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        conn = sqlite3.connect('db_path')
-        cursor = conn.cursor()
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
 
         # 创建表（如果不存在）
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS accounts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                account TEXT NOT NULL,
-                groupid TEXT NOT NULL
-            )
-        ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    account TEXT NOT NULL,
+                    groupid TEXT NOT NULL
+                )
+            ''')
 
-        # 插入新的记录
-        cursor.execute('''
-            INSERT INTO accounts (account, groupid) VALUES (?, ?)
-        ''', (account, groupid))
+            # 插入新的记录
+            cursor.execute('''
+                INSERT INTO accounts (account, groupid) VALUES (?, ?)
+            ''', (account, groupid))
 
-        # 提交更改
-        conn.commit()
 
-        # 关闭连接
-        conn.close()
-
-        return {"status_code": 200, "message": "保存成功"}
+            return {"status_code": 200, "message": "保存成功"}
 
     except sqlite3.Error as e:
         return {"status_code": 500, "message": f"数据库错误: {str(e)}"}
@@ -196,24 +192,24 @@ def save_user_num(account, groupid):#可以自行修改数据库保存的地址�
 
 
 def load_user_num():
+    # 连接到 SQLite 数据库
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(script_dir, 'accounts.db')
+        
     try:
-        # 连接到 SQLite 数据库
-        db_path = '/root/chatgpt-on-wechat/plugins/findele/accounts.db'
-        conn = sqlite3.connect('db_path')
-        cursor = conn.cursor()
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
 
-        # 查询所有记录
-        cursor.execute('SELECT account, groupid FROM accounts')
-        rows = cursor.fetchall()
+            # 查询所有记录
+            cursor.execute('SELECT account, groupid FROM accounts')
+            rows = cursor.fetchall()
 
-        # 关闭连接
-        conn.close()
 
-        # 分别提取 account 和 groupid
-        accounts = [row[0] for row in rows]
-        groupids = [row[1] for row in rows]
+            # 分别提取 account 和 groupid
+            accounts = [row[0] for row in rows]
+            groupids = [row[1] for row in rows]
 
-        return accounts, groupids, {"status_code": 200, "message": "读取成功"}
+            return accounts, groupids, {"status_code": 200, "message": "读取成功"}
 
     except sqlite3.Error as e:
         return [], [], {"status_code": 500, "message": f"数据库错误: {str(e)}"}
@@ -225,32 +221,60 @@ def load_user_num():
 
 
 def remove_account_monitoring(account):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(script_dir, 'accounts.db')
+
     try:
-        # 连接到 SQLite 数据库
-        conn = sqlite3.connect('db_path')
-        cursor = conn.cursor()
+        with sqlite3.connect(db_path) as conn:
+            # 连接到 SQLite 数据库
+            cursor = conn.cursor()
 
-        # 检查记录是否存在
-        cursor.execute('SELECT * FROM accounts WHERE account = ?', (account,))
-        records = cursor.fetchall()
+            # 检查记录是否存在
+            cursor.execute('SELECT * FROM accounts WHERE account = ?', (account,))
+            records = cursor.fetchall()
 
-        if not records:
-            return {"status_code": 404, "message": "记录未找到"}
+            if not records:
+                return {"status_code": 404, "message": "记录未找到"}
 
-        # 删除记录
-        cursor.execute('DELETE FROM accounts WHERE account = ?', (account,))
-        conn.commit()
+            # 删除记录
+            cursor.execute('DELETE FROM accounts WHERE account = ?', (account,))
 
-        # 关闭连接
-        conn.close()
 
-        return {"status_code": 200, "message": "记录删除成功"}
+            return {"status_code": 200, "message": "记录删除成功"}
 
     except sqlite3.Error as e:
         return {"status_code": 500, "message": f"数据库错误: {str(e)}"}
 
     except Exception as e:
         return {"status_code": 500, "message": f"未知错误: {str(e)}"}
+
+
+def check_login():#检查微信是否成功登录
+    try:
+        # 检查 itchat 实例是否存在
+        if not hasattr(itchat, 'instance'):
+            return False
+        
+        # 检查 storage 是否初始化
+        if not hasattr(itchat.instance, 'storageClass'):
+            return False
+        
+        # 检查是否有有效的用户名
+        if not itchat.instance.storageClass.userName:
+            return False
+            
+        # 检查是否在线
+        if not itchat.instance.alive:
+            return False
+        
+        # 检查登录状态
+        if itchat.instance.loginInfo.get('wxuin') is None:
+            return False
+            
+        return True
+    
+    except Exception as e:
+        return False
 
 
 def send_to_group(group_name: str, message, msg_type: str = 'text'):

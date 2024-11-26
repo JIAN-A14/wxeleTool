@@ -10,12 +10,12 @@ from channel.chat_message import ChatMessage
 from common.log import logger
 from plugins import *
 from config import conf, plugin_config
-from .eledef import ele_usage, ele_auto, save_user_num, load_user_num,remove_account_monitoring,send_to_group
+from .eledef import ele_usage, ele_auto, save_user_num, load_user_num,remove_account_monitoring,send_to_group,check_login
 
 @plugins.register(
-    name="electricity_plugin",
+    name="eleTool",
     desc="为使用完美校园的高校提供查电费和监控电费的功能",
-    version="1.0",
+    version="1.3",
     author="bingjuu",
     desire_priority=0
 )
@@ -62,33 +62,39 @@ class ElectricityPlugin(Plugin):
         def monitor_task():
             while True:
                 try:
+                    if not check_login():
+                        logger.error("微信未登录或登录状态查询失败，请检查登录状态")
+                        time.sleep(10)
+                        continue
                     # 获取所有注册的账号和群组ID
                     accounts, groupids, result = load_user_num()
 
                     if result.get("status_code") == 200:
                         # 遍历每个账号和对应的群组ID
                         for account, groupid in zip(accounts, groupids):
-                            try:
-                                # 检查电费状态
-                                warning = ele_auto(account)
+                                try:
+                                    # 检查电费状态
+                                    warning = ele_auto(account)
 
-                                # 如果有警告信息，则发送到对应的群组
-                                if warning and warning.get("status_code") == 200 and warning.get("warning"):
-                                    try:
-                                        message = warning["warning"]
-                                        success = send_to_group(groupid, message, "text")
+                                    # 如果有警告信息，则发送到对应的群组
+                                    if warning and warning.get("status_code") == 200 and warning.get("warning"):
+                                        try:
+                                            message = warning["warning"]
+                                            success = send_to_group(groupid, message, "text")
 
-                                    
-                                        if success:
-                                            logger.info(f"[电费插件] 已发送警告消息到群组 {groupid}")
-                                        else:
-                                            logger.error(f"[电费插件] 发送警告消息到群组 {groupid} 失败")
-                                    except Exception as e:
-                                        logger.error(f"[电费插件] 发送警告消息到群组 {groupid} 失败：{e}")
+                                        
+                                            if success:
+                                                logger.info(f"[电费插件] 已发送警告消息到群组 {groupid}")
+                                            else:
+                                                logger.error(f"[电费插件] 发送警告消息到群组 {groupid} 失败")
+                                        except Exception as e:
+                                            logger.error(f"[电费插件] 发送警告消息到群组 {groupid} 失败：{e}")
 
-                            except Exception as e:
-                                logger.error(f"[电费插件] 处理账号 {account} 时出错：{str(e)}")
-                                continue
+                                except Exception as e:
+                                    logger.error(f"[电费插件] 处理账号 {account} 时出错：{str(e)}")
+                                    continue
+
+                            
 
                     else:
                         logger.error(f"[电费插件] 加载用户信息失败: {result.get('message')}")
