@@ -12,8 +12,9 @@ import requests
 
 
 
-def ele_usage(account,customercode):
+def ele_usage(account):
     try:
+        customercode = load_config().get("customercode")
         session = requests.Session()
         session.cookies.clear()
 
@@ -120,21 +121,22 @@ def ele_usage(account,customercode):
 
 def ele_warning(account):#这段函数会调用ele_usage函数，如果电量过低就会返回警告
     usage_info = ele_usage(account)
+    warnnum = load_config().get("warnnum",20)
 
     if usage_info["status_code"] == 200:
         current_power = usage_info["current_power"]
         room_number = usage_info["room_number"]
         
-        if current_power is not None and isinstance(current_power,(int,float)) and current_power < 20:
+        if current_power is not None and isinstance(current_power,(int,float)) and current_power < warnnum:
             return {
                 "status_code": 200,
                 "warning": f"当前电量为: {current_power} 度，电量过低，尽快充电费捏"
             }
         else:
             return{
-                "status_code": 200,
+                "status_code": 201,
                 "warning": f"当前电量为: {current_power} 度，电量正常"
-            }#这段else不需要可以删除
+            }
     else:
         return{
             "status_code": usage_info["status_code"],
@@ -145,13 +147,22 @@ def ele_warning(account):#这段函数会调用ele_usage函数，如果电量过
 
 
 
-def ele_auto(account):# 这个函数会调用ele_warning函数检查一次电量，这个中间商函数是前期构思拉出来的，最后为这个函数设想的功能集成在elemain里了，为了让它有点作用就把他放着了
+def warning_switch(account,config):# 这个函数会调用ele_warning函数检查一次电量，这个中间商函数是前期构思拉出来的，最后为这个函数设想的功能集成在elemain里了，为了让它有点作用就把他放着了
     """检查电量并返回警告信息"""
     warning_info = ele_warning(account)
-    if warning_info and warning_info["status_code"] == 200 and "warning" in warning_info:
-        return {
-            "status_code": 200,
-            "warning": f"{warning_info['warning']}"
+    warningswitch = config.get("warningswitch", False)
+
+    if warningswitch:
+        if warning_info and warning_info["status_code"] == 200 and "warning" in warning_info:
+            return {
+                "status_code": 200,
+                "warning": f"{warning_info['warning']}"
+            }
+    else:
+        if warning_info["status_code"] in [200,201] and "warning" in warning_info:
+            return {
+                "status_code": 200,
+                "warning": f"{warning_info['warning']}"
         }
     return None
 
@@ -248,6 +259,25 @@ def remove_account_monitoring(account):
     except Exception as e:
         return {"status_code": 500, "message": f"未知错误: {str(e)}"}
 
+
+def load_config():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(current_dir, 'config.json')
+    template_path = os.path.join(current_dir, 'config.json.template')
+    if not os.path.exists(config_path):
+        config_path = template_path
+
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, 'r',encoding='utf-8') as f:
+                config = json.load(f)
+                return config
+
+
+    except json.JSONDecodeError:
+        return {"warning": "配置文件解析错误，将使用默认配置"}
+    except Exception as e:
+        return {"warning": f"读取配置文件失败: {str(e)}"}
 
 def check_login():#检查微信是否成功登录
     try:

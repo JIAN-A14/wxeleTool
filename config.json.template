@@ -1,8 +1,7 @@
 {
-"wxeleTool": {
     "customercode": "",
-    "warningswitch": true,
+    "warningswitch": false,
     "warnnum": 20,
     "checkinterval": 3600
-}
+
 }

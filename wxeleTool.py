@@ -10,12 +10,12 @@ from channel.chat_message import ChatMessage
 from common.log import logger
 from plugins import *
 from config import conf, plugin_config
-from .wxeledef import ele_usage, ele_auto, save_user_num, load_user_num,remove_account_monitoring,send_to_group,check_login
+from .wxeledef import ele_usage, warning_switch, save_user_num, load_user_num,remove_account_monitoring,send_to_group,check_login,load_config
 
 @plugins.register(
-    name="eleTool",
+    name="wxeleTool",
     desc="为使用完美校园的高校提供查电费和监控电费的功能",
-    version="1.4",
+    version="1.5",
     author="bingjuu",
     desire_priority=1
 )
@@ -25,11 +25,9 @@ class ElectricityPlugin(Plugin):
         self.handlers = {}
         self.handlers[Event.ON_HANDLE_CONTEXT] = self.on_handle_context
         self.pending_registrations = {}  # 存储待处理的注册信息
-        # 从全局配置获取插件配置
-        self.config = self.load_config()
-        if not self.config:
-            self.config = plugin_config.get("eleTool", {})
-        logger.info(f"[电费插件] 初始化完成，配置信息：{self.config}")
+        # 从本地配置获取插件配置
+        self.config = load_config()
+        logger.info(f"[wxeleTool] 初始化完成，配置信息：{self.config}")
         self.start_monitoring()
 
     def check_query_keywords(self, message):
@@ -52,9 +50,9 @@ class ElectricityPlugin(Plugin):
     def get_help_text(self, **kwargs):
         help_text = "电费查询与监控插件"
         help_text += "使用说明："
-        help_text += "1. 查询电费: 发送包含'电费'和'查'的消息，并附上学号"
-        help_text += "2. 监控电费: 发送包含'电费'和'监控'的消息，并附上学号"
-        help_text += "3. 取消监控: 发送包含'取消电费监控'的消息，并附上学号"
+        help_text += "1. 查询电费: 发送机器人包含'电费'和'查'的消息（消息包含关键字即可），并附上学号"
+        help_text += "2. 监控电费: 发送机器人包含'电费'和'监控'的消息（同上），并附上学号，然后机器人会问你要绑定的微信群名，回复微信群名即可"
+        help_text += "3. 取消监控: 发送机器人包含'取消电费监控'的消息（同上），并附上学号"
         return help_text
 
     def start_monitoring(self):
@@ -63,18 +61,19 @@ class ElectricityPlugin(Plugin):
             while True:
                 try:
                     if not check_login():
-                        logger.error("微信未登录或登录状态查询失败，请检查登录状态")
+                        logger.error("[wxeleTool]微信未登录或登录状态查询失败，请检查登录状态")
                         time.sleep(10)
                         continue
                     # 获取所有注册的账号和群组ID
                     accounts, groupids, result = load_user_num()
+                    
 
                     if result.get("status_code") == 200:
                         # 遍历每个账号和对应的群组ID
                         for account, groupid in zip(accounts, groupids):
                                 try:
                                     # 检查电费状态
-                                    warning = ele_auto(account)
+                                    warning = warning_switch(account,self.config)
 
                                     # 如果有警告信息，则发送到对应的群组
                                     if warning and warning.get("status_code") == 200 and warning.get("warning"):
@@ -84,32 +83,32 @@ class ElectricityPlugin(Plugin):
 
                                         
                                             if success:
-                                                logger.info(f"[电费插件] 已发送警告消息到群组 {groupid}")
+                                                logger.info(f"[wxeleTool] 已发送警告消息到群组 {groupid}")
                                             else:
-                                                logger.error(f"[电费插件] 发送警告消息到群组 {groupid} 失败")
+                                                logger.error(f"[wxeleTool] 发送警告消息到群组 {groupid} 失败")
                                         except Exception as e:
-                                            logger.error(f"[电费插件] 发送警告消息到群组 {groupid} 失败：{e}")
+                                            logger.error(f"[wxeleTool] 发送警告消息到群组 {groupid} 失败：{e}")
 
                                 except Exception as e:
-                                    logger.error(f"[电费插件] 处理账号 {account} 时出错：{str(e)}")
+                                    logger.error(f"[wxeleTool] 处理账号 {account} 时出错：{str(e)}")
                                     continue
 
                             
 
                     else:
-                        logger.error(f"[电费插件] 加载用户信息失败: {result.get('message')}")
+                        logger.error(f"[wxeleTool] 加载用户信息失败: {result.get('message')}")
 
                 except Exception as e:
-                    logger.error(f"[电费插件] 监控任务出错：{str(e)}")
+                    logger.error(f"[wxeleTool] 监控任务出错：{str(e)}")
                 finally:
                     # 从配置中获取检查间隔，默认为3600秒即一小时
-                    check_interval = self.config.get("check_interval", 3600)
-                    time.sleep(check_interval)
+                    checkinterval = self.config.get("checkinterval", 3600)
+                    time.sleep(checkinterval)
 
         # 启动监控线程
         monitor_thread = threading.Thread(target=monitor_task, daemon=True)
         monitor_thread.start()
-        logger.info("[电费插件] 监控线程已启动")
+        logger.info("[wxeleTool] 监控线程已启动")
 
 
     def on_handle_context(self, e_context: EventContext):
@@ -117,7 +116,7 @@ class ElectricityPlugin(Plugin):
             return
 
         content = e_context['context'].content
-        logger.debug(f"[电费插件] 收到消息：{content}")
+        logger.debug(f"[wxeleTool] 收到消息：{content}")
 
         if e_context['context'].type != ContextType.TEXT:
             return
@@ -174,9 +173,9 @@ class ElectricityPlugin(Plugin):
                     result = remove_account_monitoring(account)
                     reply_content = result["message"]
                     if result["status_code"] == 200:
-                        logger.info(f"[电费插件] 已取消学号 {account} 的监控")
+                        logger.info(f"[wxeleTool] 已取消学号 {account} 的监控")
                     elif result["status_code"] == 404:
-                        logger.warning(f"[电费插件] 学号 {account} 似乎没有在监控列表中")
+                        logger.warning(f"[wxeleTool] 学号 {account} 似乎没有在监控列表中")
             
                 self._send_reply(e_context, reply_content)  
 
@@ -185,7 +184,7 @@ class ElectricityPlugin(Plugin):
                 self._handle_group_registration(e_context)
 
         except Exception as e:
-            logger.error(f"[电费插件] 处理消息时发生错误：{str(e)}")
+            logger.error(f"[wxeleTool] 处理消息时发生错误：{str(e)}")
             self._send_reply(e_context, "处理请求时发生错误")
 
     def _send_reply(self, e_context, content):
@@ -209,7 +208,7 @@ class ElectricityPlugin(Plugin):
             del self.pending_registrations[session_id]
             reply_content = response["message"]
             if response["status_code"] == 200:
-                logger.info(f"[电费插件] 学号 {account} 将会将电量警告信息发送到微信群 {groupid},开始监控")
+                logger.info(f"[wxeleTool] 学号 {account} 将会将电量警告信息发送到微信群 {groupid},开始监控")
         
         self._send_reply(e_context, reply_content)
 
