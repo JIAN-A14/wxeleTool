@@ -12,7 +12,7 @@ import requests
 
 
 
-def ele_usage(account):
+def ele_usage(account,customercode):
     try:
         session = requests.Session()
         session.cookies.clear()
@@ -21,7 +21,7 @@ def ele_usage(account):
 
         data = {
             "param": f'{{"cmd":"h5_getstuindexpage","account":"{account}"}}',
-            "customercode": 1575,
+            "customercode": {customercode},
         }
 
         # 发送请求
@@ -49,7 +49,7 @@ def ele_usage(account):
                 print(f"Body Data: {body}")
 
                 # 获取房间号
-                room_number = body.get('roomfullname', '未知房间')
+                room_number = body.get('roomfullname', [])
 
                 # 获取电费信息
                 modist = body.get("modlist", [])
@@ -85,7 +85,7 @@ def ele_usage(account):
                 return {
                     "status_code": 200,
                     "room_number": room_number,
-                    "current_power": current_power if current_power is not None else '未知电量',
+                    "current_power": current_power if current_power is not None else '该学号未绑定房间号',
                     "weekly_usage": weekly_usage
                 }
             else:
